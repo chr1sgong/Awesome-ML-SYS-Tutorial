@@ -30,11 +30,11 @@ Scheduler 整体的工作流程如下图所示：[^code-walk]
 
 **`new_batch`**：
 
-- **用途：**：一批准备好进行 prefill/extend 阶段的 Request。
+- **用途：**：一批准备好进行 prefill/extend 阶段的 Request；
 - **一些额外要点**
-  - **分块预填充**：如果 Request 所需的 token 数超过可用内存（`remaining_tokens`），可能会被分块成较小的部分。
-  - `new_batch`  中的 Request 将经历 prefill/extend。
-  - prefill/extend 后，`new_batch`  将过渡到  **全局批次（Global Batch）**，用于下一次迭代。
+  - **分块预填充**：如果 Request 所需的 token 数超过可用内存（`remaining_tokens`），可能会被分块成较小的部分；
+  - `new_batch`  中的 Request 将经历 prefill/extend；
+  - prefill/extend 后，`new_batch`  在下一轮调度时，它成为 `last_batch`，随后将其 merge 到 `running_batch` 中；
 
 **`running_batch`**：
 
@@ -143,9 +143,88 @@ def forward_batch_generation(self, model_worker_batch: ModelWorkerBatch):
         )
 ```
 
+______________________________
+
+这些数据结构的关系可以从两个维度来理解：**请求的状态流转（生命周期）** 和 **数据的抽象层次（执行栈）**。
+
+### 1. 生命周期维度：请求在哪些“篮子”里？
+
+这个维度解释了 `waiting_queue`、`new_batch`、`running_batch` 和 `cur_batch` 之间的逻辑关系。它们本质上都是存放 `Req`（请求对象）的容器。
+
+*   **`waiting_queue` (等待队列)**：
+    *   **角色**：蓄水池。
+    *   **逻辑**：所有刚进入系统的请求或因为内存不足被“撤回”（Retract）的请求都在这里排队。
+*   **`new_batch` (预填充批次)**：
+    *   **角色**：VIP 入场通道。
+    *   **逻辑**：`Scheduler` 每一轮都会尝试从 `waiting_queue` 捞出一批请求进行 Prefill（预填充）。这批请求被打包成一个 `ScheduleBatch` 对象，称为 `new_batch`。
+*   **`running_batch` (运行中/解码批次)**：
+    *   **角色**：主舞台。
+    *   **逻辑**：所有已经完成 Prefill、正在进行逐 Token 生成（Decode）的请求都在这里。它是一个**长期存在**的 `ScheduleBatch` 对象，每一轮会合并（Merge）进刚做完 Prefill 的新请求，并剔除（Filter）掉已经生成结束的请求。
+*   **`cur_batch` (当前执行批次)**：
+    *   **角色**：指针/引用。
+    *   **逻辑**：这只是一个临时变量。在每一轮调度中：
+        *   **如果有 `new_batch`**：`cur_batch = new_batch`（Prefill 优先策略）。
+        *   **如果没有 `new_batch`**：`cur_batch = running_batch`（处理存量的 Decode 请求）。
+        *   然后系统调用 `run_batch(cur_batch)`。
+
+---
+
+### 2. 执行栈维度：数据是如何被层层剥离的？
+
+这个维度解释了 `ScheduleBatch`、`ModelWorkerBatch` 和 `ForwardBatch` 之间的转换关系。
+
+*   **`ScheduleBatch` (调度层)**：
+    *   **位置**：CPU (Scheduler)。
+    *   **包含内容**：最全。包含 `Req` 对象列表、KV Cache 树引用、各种元数据。
+    *   **作用**：负责**“管人”**（管理请求状态、分配 KV 缓存位置）。
+*   **`ModelWorkerBatch` (工人层)**：
+    *   **位置**：CPU -> GPU 传输中 (TpModelWorker)。
+    *   **包含内容**：精简版。不再包含 `Req` 对象，只包含 GPU 推理需要的索引（如 `req_pool_indices`）、输入 ID 等。
+    *   **作用**：负责**“传话”**。它是从调度器发送给模型推理器的指令。
+*   **`ForwardBatch` (推理层)**：
+    *   **位置**：GPU (ModelRunner)。
+    *   **包含内容**：纯 Tensor。将 `ModelWorkerBatch` 里的列表和元数据转换为可以在 CUDA Kernel 里直接使用的张量（如 `positions`、`attn_backend`）。
+    *   **作用**：负责**“干活”**。直接喂给模型做 Forward 计算。
+
+---
+
+### 总结关系图
+
+我们可以用一个**漏斗模型**来概括：
+
+#### **A. 宏观流动 (Request Flow)**
+```text
+[新请求] -> waiting_queue 
+                |
+                v (调度器捞取)
+           new_batch (ScheduleBatch) -> 第一次推理 (Prefill)
+                |
+                v (推理完成，合并)
+          running_batch (ScheduleBatch) -> 后续推理 (Decode)
+```
+
+#### **B. 微观执行 (Data Transformation)**
+```text
+每一轮推理：
+[cur_batch (ScheduleBatch)]  -- (CPU 业务逻辑)
+       |
+       | .get_model_worker_batch()
+       v
+[ModelWorkerBatch]           -- (跨进程/多卡广播)
+       |
+       | ForwardBatch.init_new()
+       v
+[ForwardBatch]               -- (GPU Kernel 推理)
+```
+
+**一句话总结：**
+`new_batch` 和 `running_batch` 是不同阶段的**实体容器**（都是 `ScheduleBatch` 类型），而 `ModelWorkerBatch` 和 `ForwardBatch` 是为了让这些容器里的数据能被 GPU 模型理解而进行的**格式转换**。
+
+__________________________________________________________
+
 ### Cache
 
-cache 在 sglang 中，相关的主要是``req_to_token_pool`, `token_to_kv_pool`,`tree_cache` 三个结构。
+cache 在 sglang 中，相关的主要是 `req_to_token_pool`, `token_to_kv_pool`, `tree_cache` 三个结构；
 
 ```python
 req_to_token_pool[req_idx]:
@@ -158,7 +237,7 @@ req_to_token_pool[req_idx]:
 
 KV Cache Pool:
 ┌──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┐
-│loc_1 │loc_2 │ ... │loc_1984│loc_1985│ ... │loc_3984│ ... │
+│loc_1 │loc_2 │ ...  │loc_1984│loc_1985│ ... │loc_3984│ ... │
 ├──────┼──────┼──────┼──────┼──────┼──────┼──────┼──────┤
 │ k1,v1│ k2,v2│ ... │k1984,v1984│k1985,v1985│ ... │k3984,v3984│ ... │
 └──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┘
@@ -240,6 +319,83 @@ req_to_token_pool.write(
 ```
 
 ![](img/sglang_cache.png)
+
+
+你说得非常对！这种“大彻大悟”的感觉确实很像第一次理解操作系统里**虚拟内存（Virtual Memory）**和**文件缓存（Page Cache）**区别时的那一瞬间。
+
+正如颖老板（Ying Sheng）所说，它们确实是**正交（Orthogonal）**的。简单来说：
+*   **Paged Attention** 解决了**“存储形式”**问题：它让逻辑上连续的 Token 可以住在物理上散乱的“公寓”里，消灭了显存碎片。
+*   **Radix Cache** 解决了**“存储内容”**问题：它决定了哪些“公寓”里的数据可以被不同的人共用，消灭了重复计算。
+
+以下是为你重写的整个 Cache 架构解析段落，专门强化了这两者的对比和二级存储的深度逻辑。
+
+---
+
+# SGLang 缓存系统：Radix Cache 与 Paged Attention 的完美结合
+
+SGLang 的缓存管理是现代操作系统设计精髓在 AI 推理领域的体现。它通过**二级索引机制**，将“如何寻址”与“如何复用”彻底解耦。
+
+### 1. 核心误区澄清：Radix Cache vs. Paged Attention
+
+很多初学者（包括早期的开发者）会认为两者是竞争关系，但实际上它们在不同层级工作：
+
+| 维度 | Paged Attention (寻址层) | Radix Cache (策略层) |
+| :--- | :--- | :--- |
+| **解决的问题** | **显存碎片**。解决逻辑连续但物理离散的问题。 | **重复计算**。解决多个请求之间 KV 数据的共享。 |
+| **OS 类比** | **页表 (Page Table)**。将虚拟地址映射到物理页。 | **共享库/文件缓存**。多个进程共用同一物理内存块。 |
+| **关注点** | 关注**“怎么存”**：如何利用不连续的显存块。 | 关注**“存什么”**：哪些前缀是一样的，可以复用。 |
+| **关系** | 它是基础。没有分页，共享会因内存碎片而难以实施。 | 它是灵魂。利用分页提供的灵活性，实现极致的复用。 |
+
+---
+
+### 2. 实例场景：3 个请求的缓存布局
+
+假设系统正在处理以下三个共享部分前缀的请求：
+*   **请求 1**: `"A B C D"`
+*   **请求 2**: `"A B C F"`
+*   **请求 3**: `"A B G H"`
+
+#### **层级 A：逻辑映射层 (`req_to_token_pool`) —— “二级索引/房卡映射表”**
+这是由 **Paged Attention** 驱动的虚拟视图。**每个请求分配到矩阵中的一行**。这一行记录了该请求的每个 Token 逻辑位置对应的物理显存“槽位号”（loc）。
+
+| 请求标识 (`req_pool_idx`) | Pos 0 | Pos 1 | Pos 2 | Pos 3 | 说明 (Radix Cache 决策结果) |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Request 1 (行 0)** | **10** | **11** | **12** | **20** | 共享 ABC，私有 D |
+| **Request 2 (行 1)** | **10** | **11** | **12** | **25** | 共享 ABC，私有 F |
+| **Request 3 (行 2)** | **10** | **11** | **40** | **41** | 共享 AB，私有 GH |
+
+---
+
+#### **层级 B：物理存储层 (`token_to_kv_pool`) —— “真实的物理公寓”**
+这是 GPU 显存中真正存放 KV Tensor 的地方。由于 Paged Attention 的存在，**物理槽位完全不需要连续**。
+
+| 物理槽位 (Slot Index) | ... | **10** | **11** | **12** | ... | **20** | ... | **25** | ... | **40** | **41** | ... |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **KV 数据内容** | | **[A]** | **[B]** | **[C]** | | **[D]** | | **[F]** | | **[G]** | **[H]** | |
+| **共享状态 (策略层)** | | 3人共享 | 3人共享 | 2人共享 | | R1私有 | | R2私有 | | R3私有 | R3私有 | |
+
+---
+
+### 3. 深度设计理念解析
+
+#### **1. Paged Attention：逻辑连续 vs 物理离散**
+*   **本质**：它是缓存系统的**底层物理支柱**。
+*   **逻辑**：在模型推理（Forward）时，GPU 算子只需要通过 `req_to_token_pool` 拿到物理索引序列 `[10, 11, 12, 20]`。即使这些数字在物理上跨度极大（中间有大量空格或其他请求的数据），映射表也能把它们在逻辑上“缝合”成一个连续的 Tensor。
+*   **价值**：彻底消灭了显存的外部碎片。只要显存里还有任何一个空位（Slot），就能被利用。
+
+#### **2. Radix Cache：零拷贝的“内容复用”策略**
+*   **本质**：它是缓存系统的**高层指挥官**。
+*   **逻辑**：当请求 2 进来时，Radix Tree 发现 `"A B C"` 已经存在于 `loc 10, 11, 12`。它下达指令：“不要拷贝，直接把 Request 2 映射表的 `Pos 0-2` 填上这三个数”。
+*   **价值**：将缓存复用的开销从“海量数据拷贝”降到了“修改几个整数”。这使得 SGLang 在处理长 Prompt、多轮对话和 Few-shot 场景时，吞吐量远超对手。
+
+#### **3. 二级索引：管理的艺术**
+*   **`tree_cache` (Radix Tree)**：管理**内容与位置的对应关系**（"A B" 住在 10, 11 号房）。
+*   **`req_to_token_pool` (映射表)**：管理**请求与位置的对应关系**（客人 1 拿到了 10, 11 号房的房卡）。
+*   **`token_to_kv_pool` (显存池)**：管理**真实的物理存储**（房间本身）。
+
+### 总结
+SGLang 的牛逼之处在于：它用 **Paged Attention** 提供了“可以乱住”的自由度，再用 **Radix Cache** 实现了“大家共用”的极致效率。这种二级存储设计，让每一字节显存都花在了刀刃上，也让 CPU 的调度逻辑能够以极低的开销指挥庞大的 GPU 显存。
+
 
 ### PrefillAdder
 
