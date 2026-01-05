@@ -1,89 +1,152 @@
 # Awesome-ML-SYS-Tutorial
-## [English README](./README-eng.md) | [简体中文](./README.md)
 
-My learning notes/codes for ML SYS.
+## [English Version](./README.md) | [Chinese Version](./README-cn.md)
 
-一直以来对 ML + SYS 很感兴趣，苦于本科没有学好 ML，更没学好 SYS，但是读博了觉得自己应该可以在这方面试一试。
+My learning notes for ML SYS.
 
-有如此打算，一来是我发觉组里很多能力出众的高年级学长们做的是 ML Theory + Application。不过，真的把一个 Theory 落到一个良好的 Application 上，即便是他们这样让我敬佩的 theory researcher，也有着一定挑战。在我入学前，组里有两篇让我眼前一亮的工作 [SPIN](https://github.com/uclaml/SPIN) 和 [SPPO](https://github.com/uclaml/SPPO)。工作本身都有非常棒的价值，但是如果在工程/系统上优化好，想来可以有更好的影响力。
+I've been writing this blog series intermittently for over a year now, and it's almost become an RL Infra Learning Note 😂
 
-此外，博士入学前的暑假，我和组里同学做了一个 In-context Learning for Agent 的工作 [COPS](https://github.com/uclaml/COPS)，比较符合我的审美。我们就两个人主力干活，一个大哥推理论，而我负责在工程/系统上实现。这种工作模式让我的体感非常舒适，基于此，我甚至得出一个粗糙的结论：
+I often see discussions about whether ML SYS or AI Infra is worth getting into, and how to start. Everyone's choice is different. For me, I simply want to **pursue the truth in algorithms**:
 
-$$
-\dfrac{\text{Theory}+\text{System}}{2}=\text{Application}
-$$
+> A large number of RL conclusions derived from papers are based on RL infrastructure in the open-source community that may be extremely flawed. I've been involved in RL infra development for over a year, and I've seen numerous community experts diligently working, but the fact is that RL infra, whether open-source or within major companies, still has many problems. It is absolutely worth questioning whether the high-level conclusions drawn from this flawed infrastructure are correct. When I was reviewing for ICLR this year, I often asked the papers assigned to me, "If the framework you are using has implementation issues itself, can your conclusions still hold?" Although I never deducted points for this reason, no one could provide an answer that resolved my fundamental doubt.
+>
+> Therefore, some excellent researchers I know are keen to participate in infra development, spending most of their time on foundational work to rigorously ensure that the algorithm they plan to develop next has a correct basis. I greatly admire them and agree with such rigor—they are my role models. The same is true for our SGLang RL community. With so much human power and time, we all hope to provide the most correct and concise RL foundation possible, whether it's for companies training models or researchers developing new algorithms, with the goal of genuinely serving everyone in the community. Thank you for your recognition, and I look forward to hearing from interested friends who wish to contact me and join us!
 
-这就是我想做 ML + SYS 的初衷了。所以从 2024 年的夏季开始，我开始慢慢上手 ML + SYS 这个尚且方兴未艾的领域。需要学习的实在太多了，有的在一些平台（譬如知乎和 HuggingFace Blog）上已经有了很好的资料，但是其他部分仍有所欠缺。所以，这个 repo 主要记载了我自己的一些学习笔记/读后感/思索/参考过的资料 etc，我姑且按照自己的大版图进行分类，也欢迎大家 PR。每一个大的板块，倒叙阅读就是我的学习过程，欢迎大家参考此路径上手。
+After a year of going around in circles, this is the resolve that keeps me going in Infra: **to make a contribution to the community by building a correct foundation, thereby helping to ensure correct conclusions.**
 
-## RLHF System 开发笔记
+Coming back to the topic, this series of podcasts started in August 2024, when I began learning ML SYS notes following the opportunity to use [SGLang](https://github.com/sgl-project/sglang) during my research. It's largely written by me, with content focusing on **RL infra, online/offline inference systems, and some fundamentals of AI Infra**. Over the past year, starting from two or three articles and thirty to fifty Github Stars, to now exceeding 4.5K Stars, I have become a minor technical influencer. I am deeply honored and grateful for the support.
 
-- [深入浅出 slime RL 框架的优雅设计与源码](./rlhf/slime/code-walk-through/readme.md)：slime 源码赏析，同样刊载于[知乎](https://zhuanlan.zhihu.com/p/1946402397409740613)和[英文版本](./rlhf/slime/code-walk-through/readme_en.md)。
-- [通过 Torch Memory Snapshot 分析 VLM RL 训练中的显存泄露问题](./torch/mem-snapshort/readme.md)：分析 SGLang 的显存泄露问题，以及解决方案，同样刊载于[知乎](https://zhuanlan.zhihu.com/p/1943202817247519535)和[英文版本](./torch/mem-snapshort/readme-en.md)。
-- [AgentLoop 源码浅析](./rlhf/verl/multi-turn/code-walk-through/readme-6.md): 分析 verl 中基于 AgentLoop 的 multi-turn RL 的实现。
-- [系统性分析 verl multi-turn training 的时间消耗](./rlhf/verl/multi-turn/tool_examples/profile.md)：verl 多轮交互与工具调用 profile 分析，还有[英文版本](./rlhf/verl/multi-turn/tool_examples/profile_en.md)和[知乎](https://zhuanlan.zhihu.com/p/1929748460212552414)。
-- [RL 系统深思：FSDP 训练后端](./rlhf/sys-design/readme-2.md)：讨论 FSDP 的原理和实现，以及分析 verl 的 FSDP 使用。同样刊载于[知乎](https://zhuanlan.zhihu.com/p/1929115059113693341)和[英文版本](./rlhf/sys-design/readme-2-en.md)。
-- [RL 系统深思：深入理解权重更新机制](./rlhf/sys-design/readme-1.md)：半年工作的总结，深入理解权重更新机制，同样刊载于[知乎](https://zhuanlan.zhihu.com/p/1925210722704531547)和[英文版本](./rlhf/sys-design/readme-1-EN.md)。
-- [verl 参数速览](./rlhf/verl/multi-turn/code-walk-through/readme-5.md)：verl 参数速览，同样刊载于[知乎](https://zhuanlan.zhihu.com/p/1925041836998783250)，还有[英文版本](./rlhf/verl/multi-turn/code-walk-through/readme-5-EN.md)。
-- [深入浅出理解 verl 源码（Rollout）](./rlhf/verl/multi-turn/code-walk-through/readme-2.md)：同样刊载于[知乎](https://zhuanlan.zhihu.com/p/1923349757566388159)，还有[英文版本](./rlhf/verl/multi-turn/code-walk-through/readme-2-EN.md)。
-- [深入浅出理解 verl 源码（初始化）](./rlhf/verl/multi-turn/code-walk-through/readme.md)：同样刊载于[知乎](https://zhuanlan.zhihu.com/p/1920751852749849692)，还有[英文版本](./rlhf/verl/multi-turn/code-walk-through/readme_EN.md)。
-- [从 tokenizer 视角来分析 Agentic 多轮训练的复杂性](rlhf/verl/multi-turn/fast_tokenization/multiturn_tokenization_and_masking_ZH.md)：同样刊载于[知乎](https://zhuanlan.zhihu.com/p/1917126584806139373)和[英文版本](rlhf/verl/multi-turn/fast_tokenization/multiturn_tokenization_and_masking.md)。
-- [Search-R1 & veRL-SGLang: Train LLMs with Multi-Turn RL to Reason and Call a Search Engine](rlhf/verl/multi-turn//tool_examples/verl-multiturn-searchR1-like_ZH.md)：整合 Search-R1 framework 到 verl-sglang 生态，同样刊载于[知乎](https://zhuanlan.zhihu.com/p/1912156329751081620)。
-- [SGLang, verl, OpenBMB 与清华大学团队联合开源：在主流 RLHF 框架上首次支持多轮交互与工具调用](rlhf/verl/multi-turn/release_log/verl-multiturn-rollout-Release_ZH.md)：在主流 RLHF 框架上首次支持多轮交互与工具调用，同样刊载于[知乎](https://zhuanlan.zhihu.com/p/1906007821889283171)。
-- [Kimi K1.5: Long Context RL 的成功实践](./rlhf/partial-rollout/readme.md)：Long Context RLHF 的工业级实现，一直很喜欢 kimi 团队的技术报告，同样刊载于 [Kimi K1.5: Long Context RL 的成功实践](https://zhuanlan.zhihu.com/p/1894282607325344277)。
-- [SGLang-veRL Server：从 Engine 到 Server，我们需要更灵活的 RLHF rollout 接口](rlhf/verl/server-based/veRL-server-based-rollout.md)：为了实现更复杂的 RLHF 系统，我们逐步将 veRL 当中的 rollout engine 替代为 rollout server，同样刊载于[知乎：SGLang-veRL Server](https://zhuanlan.zhihu.com/p/1890631652486665464)。
-- [Rule-based Reward](https://zhuanlan.zhihu.com/p/13211508979)：这篇只有知乎，浅浅写了写，老实说原文写的我并不太喜欢，但是 determined reward 确实 charming。
-- [HybridFlow veRL 原文浅析](./rlhf/verl/readme.md)：SGLang 的 hybrid engine 的原理与实现，同样刊载于[知乎：HybridFlow veRL 原文浅析](https://zhuanlan.zhihu.com/p/24682036412)。
-- [扩展 OpenRLHF 的推理引擎](./rlhf/OpenRLHF/develop-log.md)：将 SGLang 接入到 OpenRLHF 的开发笔记，整个过程非常痛苦，而且目前还有 nccl hang error，已经直接联系了 deepspeed core contributor 在修复了。
-- [SWE-Bench：如何构造 LLM 时代的优秀 Benchmark](https://zhuanlan.zhihu.com/p/16292266518)，基于 SWE-Bench 的论文阅读笔记，如何构造好的 benchmark 以为 post-training 提供细粒度 reward，是永恒且美妙的话题。
-- [浅析以 OpenRLHF 为代表的 post-training 系统的计算流程](./rlhf/OpenRLHF/readme.md)：基于猛猿小姐姐的文章再做补充，Github native 渲染的巨烂，甚至看[知乎](https://zhuanlan.zhihu.com/p/16370000391)好了。
-- [图解大模型RLHF系列之：人人都能看懂的PPO原理与源码解读](https://zhuanlan.zhihu.com/p/677607581)以及[图解OpenRLHF中基于Ray的分布式训练流程](https://zhuanlan.zhihu.com/p/12871616401)：猛猿小姐姐的非常好的 RLHF 入门资料，看了之后会对 RLHF 的计算流以及 OpenRLHF PPO 的框架有很好的理解，我自己也补充了写自己的理解在 [RLHF 的计算流](https://github.com/zhaochenyang20/Awesome-ML-SYS-Tutorial/tree/main/rlhf/OpenRLHF#rlhf-%E7%9A%84%E8%AE%A1%E7%AE%97%E6%B5%81)。
-- [Latency optimization for weight updates](./sglang/latency-accelerte-for-weight-updates/readme.md)：一次对效率的 debug 过程，同样刊载于[记一次对 SGLang weight update latency 的优化](https://zhuanlan.zhihu.com/p/9908228168)。
-- [浅析主流 Alignment 算法与 NeMo-Aligner 框架](https://zhuanlan.zhihu.com/p/5220718268)
+**I would like to thank my advisors, Professor Quanquan Gu, Dr. Ying Sheng, and Dr. Linmin Zheng**, for the immense help and guidance they gave me in my study of AI Infra, career choices, and life path. Although I am no longer pursuing a Ph.D. at UCLA due to personal reasons, this journey after my undergraduate graduation has been an incredibly valuable experience. I have now joined RadixArk full-time, continuing my research in RL Infra. We will continue to share AI Infra-related technology and thoughts through my blog, via unofficial channels. **I also hope readers interested in AI Infra reach out to us, join the SGLang open-source community, and together build open-source AI Infra that changes the world and is worth being proud of for a lifetime!**
+
+## RLHF System Development Notes
+
+### slime Framework
+
+- 【Not finished】[Achieving Speed and Accuracy: A Comprehensive Solution to Train-Inference Mismatch in RL](./rlhf/slime/mismatch/blog-en.md): Introduces two solutions provided by the slime framework for the train-inference mismatch problem: achieving perfect True On-Policy training through kernel-level alignment, and mitigating the mismatch using algorithms like TIS/MIS. Also available in [Chinese version](./rlhf/slime/mismatch/blog-cn.md).
+- [Support FSDP2 as A Training Backend for slime](./rlhf/slime/fsdp/readme_en.md): Added FSDP as a training backend to slime, and aligned it with Megatron. FSDP is more flexible in supporting models with architectural innovations like Qwen3-Next/gpt-oss and helps us further support VLM RL. Also available in [Chinese version](./rlhf/slime/fsdp/readme.md) and on [Zhihu](https://zhuanlan.zhihu.com/p/1979141713449742500).
+- [Unified FP8: Moving Beyond Mixed Precision for Stable and Accelerated MoE RL](./rlhf/slime/fp8/readme_en.md): Fully utilizing FP8 for both sampling (Rollout) and training (Training) in RL. Also available in [Chinese version](./rlhf/slime/fp8/readme.md) and on [Zhihu](https://zhuanlan.zhihu.com/p/1974681194017865986).
+- [Power Up Speculative Decoding In Reinforcement Learning](./rlhf/slime/spec/readme-en.md): Introduces speculative decoding into the RL sampling process, significantly boosting sampling speed when the batch size is appropriate; moreover, the draft model is updated during training. Compared to freezing the draft model, the accepted length remains consistently high, yielding long-term stable positive returns. Also available in [Chinese version](./rlhf/slime/spec/readme.md).
+- [An In-Depth Look at the Elegant Design and Source Code of the slime RL Framework](./rlhf/slime/code-walk-through/readme_en.md): slime source code appreciation. Also available on [Zhihu](https://zhuanlan.zhihu.com/p/1946402397409740613) and in [Chinese version](./rlhf/slime/code-walk-through/readme.md).
+- [Pending Review] [slime FSDP Setup Guide](./rlhf/slime/fsdp/release_log/setup_fsdp.md): Records how to test FSDP on slime, including H-cards and B-cards, and both Colocate and Disaggregated placement methods.
+- [Pending Review] [Chunked Parallel Computation of GAE in PPO (slime Implementation)](./rlhf/slime/batch-GAE/ppo-gae-chunk.md): Rewrites the standard backward recurrence of GAE into chunk-based parallel prefix scanning, significantly mitigating the GAE computation bottleneck in long sequence scenarios, achieving about $100\times–300\times$ acceleration in slime. Also available on [Zhihu](https://zhuanlan.zhihu.com/p/1975237289425798560).
+
+### AReal Framework
+
+- [AReal Code Walk Through](./rlhf/areal/code-walk-through_EN.md) AReal source code appreciation. Also available on [Zhihu](https://zhuanlan.zhihu.com/p/1983417813080236770) and in [Chinese version](./rlhf/areal/code-walk-through_CN.md).
 
 
-## SGLang 学习笔记
+### System Design and Optimization
 
-- [查看 HuggingFace 模型结构](https://zhuanlan.zhihu.com/p/9912733791)
-- [Constraint Decoding 的概念、方法与优化](./sglang/constraint-decoding/readme.md)：同样刊载于[知乎：一文理解 Constraint Decoding 的概念、方法与优化](https://zhuanlan.zhihu.com/p/18336995950)。
-- [SGLang Code Walk Through](./sglang/code-walk-through/readme.md)：一个请求被 SGLang Engine 处理的全过程，还有一些 part 没有完成，但是大多地方已经 okay，也让很多 SGLang begginer 就此开始。这里还有[中文版本](./sglang/code-walk-through/readme-CN.md)。
-- [Walk Through SGLang / VLLM Worker](./sglang/sglang-worker/readme.md)：SGLang 的代码不完全解析，同样刊载于 [Walk Through SGLang / VLLM Worker](https://zhuanlan.zhihu.com/p/6363614076)，这次我们还贴心提供了[英文版本](https://github.com/zhaochenyang20/Awesome-ML-SYS-Tutorial/blob/main/sglang/sglang-worker/readme.md)。更详细的解析应该参考 [SGLang Code Walk Through](./sglang/code-walk-through/readme.md)，这个只是辅助看看。
+- [Deep Dive into DeepSeek MoE with Classic Secondary Development of EP on FSDP](./rlhf/sys-design/readme-4-en.md): Deep dive into DeepSeek MoE with classic secondary development of EP on FSDP. Also available in [Chinese version](./rlhf/sys-design/readme-4.md) and [zhihu](https://zhuanlan.zhihu.com/p/1990790333823481023).
+- [Deep Thoughts on RL Systems: In-Depth Understanding of Weight Update Mechanism](./rlhf/sys-design/readme-1-EN.md): Summary of half a year's work, in-depth understanding of the weight update mechanism. Also available on [Zhihu](https://zhuanlan.zhihu.com/p/1925210722704531547) and in [Chinese version](./rlhf/sys-design/readme-1.md).
+- [Deep Thoughts on RL Systems: FSDP Training Backend](./rlhf/sys-design/readme-2-en.md): Discusses the principles and implementation of FSDP, and analyzes verl's use of FSDP. Also available on [Zhihu](https://zhuanlan.zhihu.com/p/1929115059113693341) and in [Chinese version](./rlhf/sys-design/readme-2.md).
+- [Pending Review] [Deep Thoughts on RL Systems: Megatron](./rlhf/sys-design/readme-3.md): Brief analysis of Megatron's basic features, focusing on its use in the RL framework.
+- [Extending the OpenRLHF Inference Engine](./rlhf/OpenRLHF/develop-log.md): Development notes on integrating SGLang into OpenRLHF. The entire process was very painful, and there's still an nccl hang error that a DeepSpeed core contributor is currently fixing.
+- [Pending Review] [SGLang as rollout engine of GRPO trainer](./rlhf/GRPO/SGLang_GRPO.md): Introduction on how to use SGLang as the inference backend for the GRPO Trainer in TRL. GRPO is a PPO variant that optimizes PPO's memory usage while improving mathematical reasoning capabilities.
+
+### verl Framework
+
+- [Analyzing VLM RL Training Memory Leaks via Torch Memory Snapshot](./torch/mem-snapshot/readme-en.md): Analysis of SGLang memory leak issues and solutions. Also available on [Zhihu](https://zhuanlan.zhihu.com/p/1943202817247519535) and in [Chinese version](./torch/mem-snapshot/readme.md).
+- [Latency optimization for weight updates](./sglang/latency-accelerate-for-weight-updates/readme.md): A debug process for efficiency. Also available on [Zhihu: A record of optimizing SGLang weight update latency](https://zhuanlan.zhihu.com/p/9908228168).
+- [In-Depth Understanding of verl Source Code (Initialization)](./rlhf/verl/multi-turn/code-walk-through/readme_EN.md): Also available on [Zhihu](https://zhuanlan.zhihu.com/p/1920751852749849692) and in [Chinese version](./rlhf/verl/multi-turn/code-walk-through/readme.md).
+- [In-Depth Understanding of verl Source Code (Rollout)](./rlhf/verl/multi-turn/code-walk-through/readme-2-EN.md): Also available on [Zhihu](https://zhuanlan.zhihu.com/p/1923349757566388159) and in [Chinese version](./rlhf/verl/multi-turn/code-walk-through/readme-2.md).
+- [Pending Review] [In-Depth Understanding of verl Source Code (Make Experience)](./rlhf/verl/multi-turn/code-walk-through/readme-3.md): Analysis of the logic for the make experience part in verl.
+- [AgentLoop Source Code Analysis](./rlhf/verl/multi-turn/code-walk-through/readme-6.md): Analysis of the multi-turn RL implementation based on AgentLoop in verl.
+- [verl Parameter Quick Reference](./rlhf/verl/multi-turn/code-walk-through/readme-5-EN.md): Quick reference for verl parameters. Also available on [Zhihu](https://zhuanlan.zhihu.com/p/1925041836998783250) and in [Chinese version](./rlhf/verl/multi-turn/code-walk-through/readme-5.md).
+- [Analyzing the Complexity of Agentic Multi-Turn Training from a Tokenizer Perspective](./rlhf/verl/multi-turn/fast_tokenization/multiturn_tokenization_and_masking.md): Also available on [Zhihu](https://zhuanlan.zhihu.com/p/1917126584806139373) and in [Chinese version](./rlhf/verl/multi-turn/fast_tokenization/multiturn_tokenization_and_masking_ZH.md).
+- [Pending Review] [DAPO Dynamic Filtering Implementation and Batch Size Analysis](./rlhf/verl/multi-turn/code-walk-through/dapo.md): Exploring how to achieve higher parallelism by padding prompts to a smaller batch size.
+- [Systematic Analysis of Time Consumption in verl Multi-Turn Training](./rlhf/verl/multi-turn/tool_examples/profile_en.md): verl multi-turn interaction and tool call profile analysis. Also available in [Chinese version](./rlhf/verl/multi-turn/tool_examples/profile.md) and on [Zhihu](https://zhuanlan.zhihu.com/p/1929748460212552414).
+- [SGLang, verl, OpenBMB, and Tsinghua University Team Jointly Open Source: First Support for Multi-Turn Interaction and Tool Calling in Mainstream RLHF Frameworks](./rlhf/verl/multi-turn/release_log/verl-multiturn-rollout-Release_ZH.md): First support for multi-turn interaction and tool calling in mainstream RLHF frameworks. Also available on [Zhihu](https://zhuanlan.zhihu.com/p/1906007821889283171).
+- [Search-R1 & veRL-SGLang: Train LLMs with Multi-Turn RL to Reason and Call a Search Engine](./rlhf/verl/multi-turn/tool_examples/verl-multiturn-searchR1-like_ZH.md): Integrating the Search-R1 framework into the verl-sglang ecosystem. Also available on [Zhihu](https://zhuanlan.zhihu.com/p/1912156329751081620).
+- [SGLang-veRL Server: From Engine to Server, We Need More Flexible RLHF Rollout Interfaces](./rlhf/verl/server-based/veRL-server-based-rollout.md): To implement more complex RLHF systems, we are gradually replacing the rollout engine in veRL with a rollout server. Also available on [Zhihu: SGLang-veRL Server](https://zhuanlan.zhihu.com/p/1890631652486665464).
+- [HybridFlow veRL Original Paper Analysis](./rlhf/verl/readme.md): Principles and implementation of SGLang's hybrid engine. Also available on [Zhihu: HybridFlow veRL Original Paper Analysis](https://zhuanlan.zhihu.com/p/24682036412).
+
+### OpenRLHF Framework
+
+- [Illustrated Series on LLM RLHF: PPO Principles and Source Code Interpretation for Everyone](https://zhuanlan.zhihu.com/p/677607581) and [Illustrated Distributed Training Process based on Ray in OpenRLHF](https://zhuanlan.zhihu.com/p/12871616401): Excellent RLHF introductory resources by Ms. Mengyuan. After reading, you will have a good understanding of RLHF's computational flow and the OpenRLHF PPO framework. I have also added my own understanding in [RLHF Computational Flow](https://github.com/zhaochenyang20/Awesome-ML-SYS-Tutorial/tree/main/rlhf/OpenRLHF#rlhf-%E7%9A%84%E8%AE%A1%E7%AE%97%E6%B5%81).
+- [Brief Analysis of the Computational Flow of Post-Training Systems Represented by OpenRLHF](./rlhf/OpenRLHF/readme.md): Further complement to Ms. Mengyuan's article. The Github native rendering is terrible; you might as well look at [Zhihu](https://zhuanlan.zhihu.com/p/16370000391).
+
+
+### Algorithms and Theory
+
+- [Kimi K1.5: Successful Practice of Long Context RL](./rlhf/partial-rollout/readme.md): Industrial implementation of Long Context RLHF. I have always liked the technical reports from the Kimi team. Also available on [Zhihu: Kimi K1.5: Successful Practice of Long Context RL](https://zhuanlan.zhihu.com/p/1894282607325344277).
+- [Rule-based Reward](https://zhuanlan.zhihu.com/p/13211508979): Only on Zhihu, a brief write-up. Honestly, I didn't particularly like the original paper, but determined reward is indeed charming.
+- [SWE-Bench: How to Construct an Excellent Benchmark in the LLM Era](https://zhuanlan.zhihu.com/p/16292266518): Reading notes on the SWE-Bench paper. How to construct a good benchmark to provide fine-grained reward for post-training is an eternal and beautiful topic.
+- [Brief Analysis of Mainstream Alignment Algorithms and the NeMo-Aligner Framework](https://zhuanlan.zhihu.com/p/5220718268)
+
+
+## SGLang Learning Notes
+
+### SGLang Diffusion Learning Notes
+
+- [Power Up Diffusion LLMs: Day‑0 Support for LLaDA 2.0](./sglang/diffusion-llm/readme-en.md): Introduction to the implementation of LLaDA2.0-flash-CAP in SGLang. Also available on [Zhihu](https://zhuanlan.zhihu.com/p/1985516215326749534) and in [Chinese version](./sglang/diffusion-llm/readme.md).
+- [SGLang Diffusion Code Walk Through](./sglang/code-walk-through/sgl_diffusion_en.md): Basic principles of the diffusion model, and the entire process of a request being handled by SGLang-Diffusion. Also available on [Zhihu](https://zhuanlan.zhihu.com/p/1982441236066480797) and in [Chinese version](./sglang/code-walk-through/sgl_diffusion.md).
+
+### Core Architecture and Optimization
+
+- [SGLang Code Walk Through](./sglang/code-walk-through/readme.md): The entire process of a request being handled by the SGLang Engine. Some parts are unfinished, but most are okay and have served as a starting point for many SGLang beginners. [Chinese version is here](./sglang/code-walk-through/readme-CN.md).
+- [Walk Through SGLang / VLLM Worker](./sglang/sglang-worker/readme.md): Incomplete analysis of SGLang code. Also available on [Walk Through SGLang / VLLM Worker](https://zhuanlan.zhihu.com/p/6363614076). We also thoughtfully provide an [English version](https://github.com/zhaochenyang20/Awesome-ML-SYS-Tutorial/blob/main/sglang/sglang-worker/readme.md). For a more detailed analysis, refer to [SGLang Code Walk Through](./sglang/code-walk-through/readme.md); this one is just supplementary.
 - [Walk Through SGLang Scheduler](./sglang/sglang-scheduler/readme-CN.md)
-- [Latency Accelerate For Weight Updates](./sglang/latency-accelerte-for-weight-updates/readme-CN.md)
-- [Reward / Embed Model Sever Engine 现状浅析](https://zhuanlan.zhihu.com/p/4148050391)
-- [SGLang 后端原文解析](https://zhuanlan.zhihu.com/p/716543182)
-- [小白视角：利用 vllm serve 新的 Embedding Model](https://zhuanlan.zhihu.com/p/715857723)
-- [小白视角：利用 SGL 来 Serve Embedding Model](https://zhuanlan.zhihu.com/p/715805386)
-- [小白视角：vllm 迁移到 SGLang 的体验与收获](https://zhuanlan.zhihu.com/p/714833359)
+- [Pending Review] [SGLang Scheduler Evolution](./sglang/scheduler-evolution/SGLang%20Scheduler%20技术变迁.md): Detailed introduction to the technical evolution of the SGLang Scheduler from serial to CPU/GPU overlap, and related components, comparing the previous overlap Scheduler with the current one introducing multiple CUDA streams and FutureMap. Can be viewed on [Zhihu article](https://zhuanlan.zhihu.com/p/1969077475129688722).
+- [Pending Review] [KV Cache Code Walkthrough](./sglang/kvcache-code-walk-through/readme.md): Overview of KV cache management implementation, starting from the Scheduler component, detailing the update process of KV cache and memory pool during prefill and decode stages.
+- [Pending Review] [SGLang Multimodal Request Lifecycle: A Deep Architectural Analysis with Qwen2.5-VL as an Example](./sglang/code-walk-through/multimodal_request_lifecycle.md): Provides a detailed analysis of the multimodal request processing flow within the SGLang framework, using Qwen2.5-VL as a reference model.
+- [Pending Review] [How A Model is Loaded in Hugging Face and SGLang](./sglang/how-model-is-loaded/readme.md): Documents the process of loading models in Hugging Face and SGLang to help understand the weight loading mechanism.
+- [Pending Review] [Speculative Decoding](./sglang/speculative-decoding/speculative-decoding.md): Introduces the speculative decoding optimization technique, which uses a smaller draft model to predict the next $K$ tokens, achieving up to $K$-fold acceleration.
+- [Pending Review] [Zero-Overhead Batch Scheduler](./sglang/zero-overhead-scheduler/zero-overhead-batch-scheduler.md): Introduces the zero-overhead batch scheduler, which solves the GPU Bubble problem caused by serial execution of CPU scheduling and GPU computation in traditional inference systems.
+- [Pending Review] [Data Parallelism Attention](./sglang/dp-attention/readme.md): Detailed introduction to the principles and implementation of DP Attention, specifically for models like DeepSeek that use MLA and only have one KV head, to avoid KV cache duplication caused by tensor parallelism.
+- [Brief Analysis of SGLang Framework's Quantization Design and Ideas](./sglang/quantization/quantization_architecture_en.md): Also available on [Zhihu: Brief Analysis of SGLang Framework's Quantization Design and Ideas](https://zhuanlan.zhihu.com/p/1971183020338832111) and in [Chinese version](./sglang/quantization/quantization_architecture.md).
+- [Constraint Decoding: Concepts, Methods, and Optimization](./sglang/constraint-decoding/readme.md): Also available on [Zhihu: Understanding Constraint Decoding: Concepts, Methods, and Optimization in one article](https://zhuanlan.zhihu.com/p/18336995950).
+- [Pending Review] [Online Update Weights](./sglang/online-update-weights/readme.md): Introduction to the implementation of the `online_update_weights` interface in SGLang. Unlike `update_weights` which reads weights from the disk, this interface broadcasts new weights directly from the training engine via NCCL.
+- [Pending Review] [SGLang Verl Engine Optimization Analysis](./sglang/sglang-verl-engine/readme.md): Analysis of optimizations in the SGLang verl engine, including the implementation of interfaces like `update_weights_from_tensor`.
+- [Latency Accelerate For Weight Updates](./sglang/latency-accelerate-for-weight-updates/readme-CN.md)
+- **[🔥 Related Debugging] [Analyzing VLM RL Training Memory Leaks via Torch Memory Snapshot](./torch/mem-snapshot/readme-en.md)**: Analysis of SGLang memory leak issues and solutions. Also available on [Zhihu](https://zhuanlan.zhihu.com/p/1943202817247519535) and in [Chinese version](./torch/mem-snapshot/readme.md).
+
+### Usage and Practice
+
+- [Pending Review] [Qwen3-Coder Usage](./sglang/qwen/coder.md): Introduction to using Qwen3-coder in SGLang, including the use of tool-parser.
+- [Pending Review] [NVIDIA Dynamo](./sglang/nvidia-dynamo/dynamo.md): Introduction to NVIDIA Dynamo, a high-throughput, low-latency inference framework designed for generative AI and inference model serving in multi-node distributed environments.
+- [Viewing HuggingFace Model Structure](https://zhuanlan.zhihu.com/p/9912733791)
+- [SGLang Backend Original Paper Analysis](https://zhuanlan.zhihu.com/p/716543182)
+- [Brief Analysis of the Status Quo of Reward / Embed Model Server Engine](https://zhuanlan.zhihu.com/p/4148050391)
+- [Newbie Perspective: Experience and Gains from Migrating vllm to SGLang](https://zhuanlan.zhihu.com/p/714833359)
+- [Newbie Perspective: Using SGL to Serve Embedding Model](https://zhuanlan.zhihu.com/p/715805386)
+- [Newbie Perspective: Using vllm to serve a new Embedding Model](https://zhuanlan.zhihu.com/p/715857723)
 
 ## Scheduling and Routing
 
-- [Mooncake：将 P / D 分离进行到底](https://zhuanlan.zhihu.com/p/1711346141)
-- [prefill 和 decode 该分离到不同的卡上么？](https://zhuanlan.zhihu.com/p/1280567902)
-- [基于 chunked prefill 理解 prefill 和 decode 的计算特性](https://zhuanlan.zhihu.com/p/718715866)
-- [ModelServer：基于 SGLang 的前端分发系统](https://zhuanlan.zhihu.com/p/718015016)
+- [Mooncake: Carrying the P/D Separation to the End](https://zhuanlan.zhihu.com/p/1711346141)
+- [Should Prefill and Decode be Separated onto Different Cards?](https://zhuanlan.zhihu.com/p/1280567902)
+- [Understanding Prefill and Decode Computation Characteristics Based on Chunked Prefill](https://zhuanlan.zhihu.com/p/718715866)
+- [ModelServer: A Frontend Distribution System Based on SGLang](https://zhuanlan.zhihu.com/p/718015016)
 
+## ML System Fundamentals
 
-## ML System 基本功
+### Transformers & Model Architecture
 
-- [基于 torch-memory-savor 浅析 CUDA Graph](./torch/cuda-graph/readme.md)：同样刊载于[知乎：基于 torch-memory-savor 浅析 CUDA Graph](https://zhuanlan.zhihu.com/p/1921726788574360686)和[英文版](./torch/cuda-graph/readme_en.md)。
-- [NCCL 与 NVIDIA TOPO](./torch/nccl/readme.md)：NCCL 的入门与 NVIDIA 显卡的检测，同样刊载于[NCCL 与 NVIDIA TOPO](https://zhuanlan.zhihu.com/p/6160835906)。
-- [PyTorch Distributed](./torch/torch-torch/readme.md)：`torch.distributed` 的通讯实践， GIL 和 `all_reduce` 的细节。这一部分同样刊载在 [知乎：PyTorch 通讯实践](https://zhuanlan.zhihu.com/p/5853094319)。
-- [Give me BF16 or Give Me Death，当下量化方法的全面评测](https://zhuanlan.zhihu.com/p/5485556270)
-- [AWQ：模型量化应当关注激活值](https://zhuanlan.zhihu.com/p/942485319)
-- [[原创][深度][PyTorch] DDP系列第一篇：入门教程](https://zhuanlan.zhihu.com/p/178402798)：虽然我没学明白 DDP 的内容，我只是借此学习了下 GIL 和 ring all reduce，这一步刊载于 [torch-distributed 的后记](./torch/torch-torch/readme.md#gil)。
-- [nvidia-smi命令详解和一些高阶技巧介绍](https://www.yourmetaverse.cn/deep_learning/199/)：主要是一些网络拓扑，在我本机的结果记录在 [nccl 部分](./torch/nccl/readme.md#nvlink-查询)。
+- [Pending Review] [Cross-Attention Mechanism in Transformer](./transformers/attention/cross_attention_en.md): Introduction to the cross-attention mechanism in Transformers, allowing the decoder to access and use relevant information from the encoder. Also available in [Chinese version](./transformers/attention/cross_attention.md).
+- [Understanding Special Tokens and Chat Templates in One Article](./transformers/special_tokens/special_tokens.md): Also recorded on Zhihu [Understanding Special Tokens and Chat Templates in One Article](https://zhuanlan.zhihu.com/p/17052593700).
 
+### CUDA & GPU
 
-## 开发指南
+- [Brief Analysis of CUDA Graph Based on torch-memory-savor](./torch/cuda-graph/readme_en.md): Also available on [Zhihu: Brief Analysis of CUDA Graph Based on torch-memory-savor](https://zhuanlan.zhihu.com/p/1921726788574360686) and in [Chinese version](./torch/cuda-graph/readme.md).
 
-- [How to use docker](./engineer/how-to-use-docker/readme.md)：如何使用 docker 来管理开发环境。请注意，为了共同塑造良好的科研环境，避免有人用 baseline "在我的机器上能跑"来恶心别人，学习 docker 对任何人都是必不可少的。同样我们也有[英文版本](./engineer/how-to-use-docker/readme_en.md)和[知乎](https://zhuanlan.zhihu.com/p/1916764175230801287)。
-- [配置清爽的开发环境](./engineer/uv/readme.md)：配置清爽的开发环境，同样刊载于[知乎：配置清爽的开发环境](https://zhuanlan.zhihu.com/p/23440683394)。
-- [一文理解 special tokens 和 chat template](./transformers/special_tokens/special_tokens.md)：同样记录于知乎 [一文理解 special tokens 和 chat template](https://zhuanlan.zhihu.com/p/17052593700)。
-- [在 CI 上编译 jupyter notebook 并部署为文档](https://zhuanlan.zhihu.com/p/2382351079)
+### Distributed Training & Communication
 
-## 未公开部分
+- [Pending Review] [Implementing Tensor Parallelism From Scratch](./torch/tensor-parallelism/readme.md): Implementation and practice of Tensor Parallelism.
+- [Pending Review] [Expert Parallelism](./rlhf/sys-design/readme-4.md)
+- [NCCL and NVIDIA TOPO](./torch/nccl/readme.md): Introduction to NCCL and NVIDIA GPU detection. Also available on [NCCL and NVIDIA TOPO](https://zhuanlan.zhihu.com/p/6160835906).
+- [NCCL and SGLang](./torch/nccl/readme_en.md): Application of NCCL in SGLang. This is very similar to the Chinese content but includes some additional notes on parallel strategies. I probably won't complete this note and will write a separate one to record parallel strategies.
+- [PyTorch Distributed](./torch/torch-distributed/readme.md): Communication practice with `torch.distributed`, details on GIL and `all_reduce`. This part is also available on [Zhihu: PyTorch Communication Practice](https://zhuanlan.zhihu.com/p/5853094319).
+- [[Original][In-Depth][PyTorch] DDP Series Part 1: Introductory Tutorial](https://zhuanlan.zhihu.com/p/178402798): Although I didn't fully grasp the DDP content, I used this to learn about GIL and ring all reduce. This step is recorded in the [Postscript of torch-distributed](./torch/torch-distributed/readme.md#gil).
+- [Detailed Explanation of nvidia-smi Command and Some Advanced Tips](https://www.yourmetaverse.cn/deep_learning/199/): Mainly about network topology; my local results are recorded in the [NCCL section](./torch/nccl/readme.md#nvlink-查询).
 
-之前的笔记大多写于 2024 年年底，经过了半年时间，我的仓库已略年久失修。一方面我自己更多在项目中负责推动 + delivery，反而自己很少写代码；另一方面，多多少少不少朋友向我们的仓库贡献了笔记，但我完全没有来得及整理。这段时间会不断完成整理并发布。这里索性列举下这些尚未完全的笔记，希望大家多多指正。
+### Quantization
 
-- [NCCL and SGLang](./torch/nccl/readme_en.md)：其实和中文内容非常接近，但是额外刊载了一些并行策略的内容。我应该不会修缮完成这个笔记，而是单独写笔记来记录并行策略。
+- [Give me BF16 or Give Me Death: Comprehensive Evaluation of Current Quantization Methods](https://zhuanlan.zhihu.com/p/5485556270)
+- [AWQ: Model Quantization Should Focus on Activation Values](https://zhuanlan.zhihu.com/p/942485319)
 
+## Developer Guide
+
+- [How to use docker](./engineer/how-to-use-docker/readme_en.md): How to use Docker to manage development environments. Please note that to collectively foster a good research environment and prevent others from being annoyed by the baseline "it runs on my machine," learning Docker is essential for everyone. We also have a [Chinese version](./engineer/how-to-use-docker/readme.md) and [Zhihu](https://zhuanlan.zhihu.com/p/1916764175230801287).
+- [Setting up a Clean Development Environment](./engineer/uv/readme.md): Setting up a clean development environment. Also available on [Zhihu: Setting up a Clean Development Environment](https://zhuanlan.zhihu.com/p/23440683394).
+- [Compiling and Deploying Jupyter Notebooks as Documentation on CI](https://zhuanlan.zhihu.com/p/2382351079)
