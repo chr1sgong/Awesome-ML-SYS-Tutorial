@@ -291,3 +291,68 @@ class ReqToTokenPool:
 | **共享状态 (策略层)** | 未知 | R1 R2 R3 共享 | R1 R2 R3 共享 | R1 R2 共享 | 未知 | R1 私有 | 未知 | R2 私有 | 未知 | R3 私有 | R3 私有 | 未知 |
 
 
+```mermaid
+graph TD
+    %% 定义请求输入
+    subgraph Input [Request Input]
+        R1[Request 1: A-B-C-D]
+    end
+
+    %% L1 层：Radix Cache
+    subgraph L1 [L1: Radix Cache - 策略层/逻辑复用]
+        direction TB
+        RT((Radix Tree))
+        Node1["Node: [A, B]<br/>Slots: [10, 11]<br/>lock_ref: 3"]
+        Node2["Node: [C]<br/>Slots: [12]<br/>lock_ref: 2"]
+        Node1 --> Node2
+        
+        R1 -- 1. Prefix Match --- Node1
+        R1 -- 2. Partial Match --- Node2
+        R1 -- 3. New Alloc --- Private[Private Token: D]
+    end
+
+    %% L2 层：ReqToTokenPool
+    subgraph L2 [L2: ReqToTokenPool - 寻址层/页表映射]
+        direction TB
+        Table[Row R1: Request-to-Token Matrix]
+        TableVal["[ 10 | 11 | 12 | 20 ]"]
+        Table --- TableVal
+        
+        Node1 -- "Fill [10, 11]" --> TableVal
+        Node2 -- "Fill [12]" --> TableVal
+        Private -- "Alloc [20]" --> TableVal
+    end
+
+    %% L3 层：TokenToKVPool
+    subgraph L3 [L3: TokenToKVPool - 物理层/VRAM 存储]
+        direction LR
+        Pool["VRAM Slots (Linear Pool)"]
+        S10["Slot 10: [A]"]
+        S11["Slot 11: [B]"]
+        S12["Slot 12: [C]"]
+        S20["Slot 20: [D]"]
+        
+        Pool --- S10 & S11 & S12 & S20
+    end
+
+    %% 模型前向映射
+    subgraph Forward [GPU Forward Stage]
+        Kernel[Paged Attention Kernel]
+    end
+
+    %% 连线关系
+    TableVal -. 4. Lookup .-> Kernel
+    Kernel ==> S10
+    Kernel ==> S11
+    Kernel ==> S12
+    Kernel ==> S20
+
+    %% 反馈循环
+    S20 -- "5. Insert (After Gen)" --> Node2
+    
+    %% 样式
+    style L1 fill:#e1f5fe,stroke:#01579b
+    style L2 fill:#fff3e0,stroke:#ef6c00
+    style L3 fill:#e8f5e9,stroke:#2e7d32
+    style Forward fill:#f3e5f5,stroke:#7b1fa2
+```
