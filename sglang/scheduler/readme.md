@@ -443,45 +443,11 @@ SGLang 引入了 `FutureMap` 机制，实现了一种预填充策略：
 
 3. 通过这种预先链接的机制，CPU 可以在完全不触碰真实数据、不进行跨设备同步的前提下，不断向 GPU 发射后续的计算指令，从而实现 Overlap Scheduling。
 
-分析完了原理，我们能够见到，Overlap Scheduling 的调度策略仍旧是灵活的，支持细粒度的资源控制，支持完善的 EOS 响应，支持抢占。当然，代价是实现复杂，需要使用 CUDA Stream 和 Future 映射管理。
+分析完了原理，我们能够见到，当多个 batch 形成流水线时，我们可以用 GPU 的 Compute N+1 和 Sample N+1，去重叠上一个批次的 Post Schedule N 和当前批次的 Pre Schedule N+1。Overlap Scheduling 的调度策略仍旧是灵活的，支持细粒度的资源控制，支持完善的 EOS 响应，支持抢占。当然，代价是实现复杂，需要使用 CUDA Stream 和 Future 映射管理。
 
-## Overlap 原理：Inference 四阶段拆解
+### Overlap 事件循环
 
-在理解 Overlap 之前，我们先将推理过程拆解为硬件特性不同的四个阶段：
-
-1. **Pre schedule** (CPU Heavy): 收集请求 (`recv_request`) -> 调度匹配 (`get_batch_to_run`, Radix 匹配) -> 资源分配 (`prepare_for_extend/decode`)。
-2. **Compute batch** (GPU Heavy): 发送 batch 到 GPU 执行一步推理 (`run_batch`)。
-3. **Sample** (GPU Heavy): 根据 Logits 和 Grammar 的 `vocab_mask` 进行采样 (`ModelRunner::sample`)。
-4. **Post schedule** (CPU Heavy): 检查结束条件 (`process_batch_result`) -> 完成请求退场并 Detokenize。
-
-**流水线核心思想**：Compute batch 和 Sample 是 GPU 重负载阶段，而 Schedule 是 CPU 重负载阶段。当多个 batch 形成流水线时，我们可以用 **GPU 的 Compute N+1 和 Sample N+1，去重叠上一个批次的 Post Schedule N 和当前批次的 Pre Schedule N+1**。
-
-> **注**：Prefill 阶段的 Grammar Mask 通常基于 Prompt，不依赖上一次 Decode 的输出，因此可以直接 Sample，不涉及复杂的依赖重叠。
-
-## 基础设施：CUDA Stream 与 FutureMap
-
-实现 Overlap 的关键在于使用 CUDA Stream 异步队列 + `FutureMap` 占位符机制。
-
-### 1. 多 Stream 协同
-- **forward_stream**: 专门用于 GPU 前向计算，与默认流并行。
-- **copy_stream**: 负责处理 GPU -> CPU 的异步数据回传。
-- **future_map**: 存放于 GPU 上，管理异步计算结果。
-
-### 2. FutureMap：显存中的异步桥梁
-由于 CPU 在准备 Batch N+1 时并不知道 Batch N 的输出，我们使用**负索引作为 Future 标识符**。
-
-**设计参数 (Engineering Wisdom)**:
-- `future_limit = max_running_requests * 3`：3 倍因子用于降低环形缓冲区的碰撞概率。
-- `future_buffer_len = max_running_requests * 5`：5 倍长度确保缓冲区足够大，防止回绕写入冲突。
-
-**工作流程**:
-1. **分配 (Alloc - CPU)**: 调用 `alloc_future_indices` 得到负数索引（如 `[-1, -2]`），作为下一轮的 `input_ids`。
-2. **存储 (Store - GPU Batch N)**: GPU 完成 Sample 后，直接在显存中将真实 Token 写入 `FutureMap` 对应位置。
-3. **解析 (Resolve - GPU Batch N+1)**: 在 Batch N+1 开始计算前，GPU 执行 `resolve_future` 将 `input_ids` 中的负数替换为真实 Token。
-
-## Overlap 事件循环
-
-在 `scheduler.py` 中，`event_loop_overlap` 通过精心安排的指令发射顺序，保证了 CPU 和 GPU 的最大并行：
+经过所有的铺垫，我们最后看看在 `scheduler.py` 中，`event_loop_overlap` 是如何通过精心安排的指令发射顺序，保证 CPU 和 GPU 的最大并行的：
 
 ```python
 def event_loop_overlap(self):
@@ -494,7 +460,6 @@ def event_loop_overlap(self):
 
         if batch:
             # 2. Launch Compute Batch (Batch N+1) -> 非阻塞提交
-            # 包含：resolve_future + forward_batch_generation
             batch_result = self.run_batch(batch) 
             self.result_queue.append((batch.copy(), batch_result))
 
@@ -511,24 +476,3 @@ def event_loop_overlap(self):
         
         self.last_batch = batch
 ```
-
-## 与 Normal 模式的关键差异与依赖处理
-
-### 1. 显存屏障与内存安全
-为了避免 Overlap 过程中 CPU 过早释放 Tensor 导致 GPU 访问野指针，SGLang 引入了 `record_batch_in_overlap` 机制。通过 `self.batch_record_buf = [None] * 2` 在两个 Batch 之间交替存储引用，强制延长 Tensor 的生命周期。
-
-### 2. 依赖解决方案
-- **Sample 阶段的 vocab mask 依赖**：通过 CPU 调度顺序保证：只有在 `Post Schedule N` 完成并更新 Grammar 状态后，才发射 `Sample N+1` 任务。
-- **Compute N+1 的输入依赖**：通过 `FutureMap` 桥接。CUDA Stream 的 FIFO 顺序保证了 `Sample N` 的 `Store` 动作必然发生在 `Compute N+1` 的 `Resolve` 之前。
-
-### 3. 架构进化：从 CPU Launch 到 CUDA Stream
-SGLang 0.4+ 的 Overlap 相比早期版本（Lazy Sampling）有了质的飞跃：
-
-| 特性 | 早期版本 (CPU Launch) | 当前版本 (CUDA Stream) |
-| :--- | :--- | :--- |
-| **Vocab Mask 管理** | CPU 计算并同步传输到 GPU | **GPU 直接计算和分配**，无传输延迟 |
-| **数据同步** | 使用 CUDA Event 进行同步 | **利用 Stream 顺序隐式同步**，性能更高 |
-| **数据搬运** | `token_ids_buf` 在 CPU/GPU 间传输 | **GPU 原地修改**，CPU 仅管理负索引分配 |
-| **优缺点** | 显存占用动态，但同步开销大 | **Zero-Overhead**，但需固定占用一小块显存 |
-
-通过将对 Sample 和 Future 读写的控制权完全交给 GPU Stream，SGLang 成功消除了调度带来的 GPU 气泡，实现了极致的吞吐。
