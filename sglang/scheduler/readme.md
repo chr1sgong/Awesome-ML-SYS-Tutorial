@@ -33,21 +33,27 @@ Scheduler 通过如下的核心逻辑对象来管理所有的 active request：
 
 1. `waiting_queue`：顾名思义，`waiting_queue` 是一个优先队列，用于存放所有的 active request。所有还没有完成 prefill 的 request 和在 decode 阶段被 retract 回来的 request 都会被放入队列中；每轮循环之前，如果队列不为空，Scheduler 会调用 `self.policy.calc_priority(self.waiting_queue)` 函数，根据预设的策略（如 first come first serve、最长前缀匹配等）对队列进行重新排序，然后通过 `PrefillAdder` 组成 `new_batch`。
 
-2. `new_batch`：即将进入 prefill/extend 阶段的 requests。考虑到 chunked prefill 的特性，如果一个请求非常长，超过了 `chunked_prefill_size`，它会被标记为 `self.chunked_req = True`，接着被特殊处理：只有当这个请求的所有 chunks 都 prefill 完成后，它才会从 `last_batch` 真正合并到 `running_batch` 中参与 Decode。状态转换轨迹：`waiting_queue -> new_batch (当前轮) -> last_batch (下一轮开始时) -> running_batch (被合并)`。
+只有当最后一个 chunk 处理完后，这个请求才会被认为“完成了 Prefill”，从而进入 Decode 阶段。在中间状态下，它既不在 waiting_queue（因为它已经开始跑了），也不在传统的 running_batch（因为它还没到 Decode），它是通过 self.chunked_req 这个单独的变量被 Scheduler 挂载的。
+
+2. `new_batch`：即将进入 prefill/extend 阶段的 requests。考虑到 chunked prefill 的特性，如果一个请求非常长，超过了 `chunked_prefill_size`，它会被标记为 `self.chunked_req = True`，接着被特殊处理：只有当这个请求的所有 chunks 都 prefill 完成后，它才会真正被标记完成了 prefill，从而被合并到 `running_batch` 中参与 Decode。对于中间状态，它既不在 `waiting_queue`（因为它已经开始跑了），也不在传统的 `running_batch`（因为它还没到 Decode），它是通过 `self.chunked_req` 这个单独的变量被 Scheduler 挂载的。新请求完整的调度轨迹：`waiting_queue -> new_batch (当前轮) -> last_batch (下一轮开始时) -> running_batch (被合并)`；而已经在 decode 阶段的请求，其调度轨迹为：`running_batch -> cur_batch (当前轮) -> running_batch (下一轮开始时)`。
 
 3. `running_batch`：即将进入 decode 阶段的 requests。当 GPU 显存（KV Cache Pool）碎片化严重或空间不足以支撑所有请求产生下一个 token 时，Scheduler 会通过  `retract_decode`  从  `running_batch`  中撤回某些 requests，将其返回到  `waiting_queue`。（PS：坦诚说 `running_batch` 和 `new_batch` 这两个命名至少在我看来，是有些误导性的。可能更准确的说法是 `prefill_batch` 和 `decode_batch`）
 
 4. `cur_batch`：在 Scheduler 主循环 `run_batch` 函数中当前正在被处理的 requests。注意到 SGLang 是 prefill first 的，当不存在新的 prefill batch 时，才进入 decode 阶段。因此，当 `new_batch` 存在时，`cur_batch = new_batch`，否则 `cur_batch = running_batch`。
 
 ```python
-    # 源码简化逻辑 (get_next_batch_to_run)
+def get_next_batch_to_run(self):
+    # 核心细节：只有上一轮是 Prefill (Extend)，才需要合并到 Decode 队列
+    if self.last_batch and self.last_batch.forward_mode.is_extend():
+        self.running_batch.merge_batch(self.last_batch)
+    
+    # Prefill 优先策略
     new_batch = self.get_new_batch_prefill()
-    if new_batch is not None:
-        ret = new_batch  # 优先运行 Prefill
+    if new_batch:
+        return new_batch
     else:
-        # 只有在没有新 Prefill 任务时，才更新并运行 running_batch (Decode)
-        self.running_batch = self.update_running_batch(self.running_batch)
-        ret = self.running_batch
+        # 无 Prefill 时，更新并运行 Decode
+    return self.update_running_batch(self.running_batch)
 ```
 
 ```mermaid
@@ -291,3 +297,238 @@ class ReqToTokenPool:
 | **共享状态 (策略层)** | 未知 | R1 R2 R3 共享 | R1 R2 R3 共享 | R1 R2 共享 | 未知 | R1 私有 | 未知 | R2 私有 | 未知 | R3 私有 | R3 私有 | 未知 |
 
 
+
+<div style="text-align: center;">
+<img src="./pics/cache.svg" alt="cache" width="800" height="600">
+</div>
+
+
+## Normal Scheduler
+
+介绍了上述关键的数据结构和逻辑之后，我们来看一下 Normal Scheduler 的流程。单个 Request 的 Scheduler 流程可以分为以下几个阶段：
+
+```text
+Req → { Pre Schedule(CPU) → Compute Batch → Sample(GPU) → Post Schedule(CPU) } → { Pre Schedule(CPU) → ...
+```
+
+或者这样的伪代码：
+
+```python
+def event_loop_normal(self):
+    """A normal scheduler loop."""
+    while True:
+        # 1. 接收请求并处理入队
+        recv_reqs = self.recv_requests()
+        self.process_input_requests(recv_reqs)
+        
+        # 2. 获取本轮执行批次 (Prefill 优先)
+        batch = self.get_next_batch_to_run()
+        self.cur_batch = batch
+        
+        if batch:
+            # 3. 运行推理与采样
+            result = self.run_batch(batch)
+            # 4. 执行后处理（更新状态、流式输出、释放缓存）
+            self.process_batch_result(batch, result)
+        else:
+            # 空闲时执行自检与重置
+            self.self_check_during_idle()
+            
+        self.last_batch = batch
+```
+
+### Pre Schedule
+
+1. 进入等待队列 (`Req → Waiting_queue`)
+
+一共是两关键函数，`Schedule::recv_requests` 和 `Schedule::process_input_requests`。前者负责通过 zmq 从 tokenizer 获取 requests。后者负责对收到的请求进行解包，分发并构造为新的 `Req` 对象，并插入到 `waiting_queue` 中，将收到信号返回给 tokenizer。
+
+```python
+def recv_requests(self):
+    """Receive requests from tokenizer manager."""
+    return self.tokenizer_manager.recv_requests()
+
+def process_input_requests(self, recv_reqs):
+    """Process input requests."""
+    for recv_req in recv_reqs:
+        worker_id = recv_req.worker_id
+        recv_req = recv_req.obj
+        output = self._request_dispatcher(recv_req)
+        self._add_request_to_queue(output)
+        self.tokenizer_manager.send_response(worker_id, output)
+```
+
+2. Pre Schedule Prefill (`waiting_queue → new_batch`)
+
+新的请求到达 `waiting_queue` 后，首先进入 Prefill 阶段。
+
+- `PrefillAdder::get_new_batch_prefill`：选择合适的请求，构建 Prefill Batch。
+- `Req::init_next_round_input()`：根据当前请求的 `input_ids` 在 RadixCache 中匹配，得到前缀长度。
+- `ScheduleBatch::prepare_for_extend()`：分配 `req_pool_indices`，为 Request 在 `req_to_token_pool` 中申请行索引；计算 `new_slots_count`，从 `token_to_kv_pool` 中拨款申请新的物理 Slot；随后更新 `req_to_token_pool`，将匹配到的已有 Slot 与新申请的 Slot 拼接成该 Request 的专属槽位序列。
+
+【 req_to_token_pool  在 slot 申请完之后就更新了，那 radix cache 多久被更新呢？】
+
+
+3. Pre Schedule Decode (`running_batch → cur_batch`)
+
+- `update_running_batch`：返回已经输出 EOS 的 Request 或者已经输出 Length Limit 的 Request。将上一轮完成 Prefill 的 `last_batch` 正式并入 `running_batch`。
+- `retract_decode`：如果 GPU 显存池（KV Pool）剩余槽位不足以支撑当前所有请求产生下一个 token，调度器会强制撤回部分请求（通常是最近最少处理的），将其 KV 释放并重新打回 `waiting_queue`，准备在之后被重新 prefill。
+- `ScheduleBatch::prepare_for_decode()`：在 `token_to_kv_pool` 中申请新的物理 Slot，并更新 `req_to_token_pool` 中的索引。注意，不同于 Prefill 的大块分配，Decode 每次只分配 `bs * 1` 个新的物理 Slot（`alloc_token_slots(bs * 1)`）。
+
+
+### Compute Batch & Sample
+
+GPU 执行 `Forward`，得到 logits 后进入采样，得到 `next_token_ids`：
+
+```python
+next_token_ids = self.sampler(
+    logits_output,
+    forward_batch.sampling_info,
+    # Prefill 采样位置是序列末尾 (seq_lens - 1)
+    # Decode 采样位置就是当前的 positions
+    indices = (forward_batch.positions if is_decode else forward_batch.seq_lens - 1),
+    ...
+)
+```
+
+### Post Schedule
+
+1. `result.copy_done.synchronize()`：同步等待，确保 CPU 读到的 `next_token_ids` 是准确传输完成的数据。
+2. `req.output_ids.append(next_token_id)`：将 `next_token_id` 追加到 `req.output_ids`。
+3. `tree_cache.cache_unfinished_req(req)`：更新 LRU 时间戳并锁定路径。
+4. `tree_cache.cache_finished_req(req)`：该 request 的 radix cache 节点引用计数减一，确保后续可以被释放。
+5. `stream_output()`：将结果推送给客户端。
+6. `cache_unfinished_req(req)`：更新 Radix Cache （L1 Cache）的节点，确保后续可以被其他请求共享。
+
+注意到，`token_to_kv_pool` （L3 Cache）和 `req_to_token_pool` （L2 Cache）的更新是在 Pre Schedule 阶段完成的，而 Radix Cache 的更新是在 Post Schedule 阶段完成的。如果在 Pre Schedule 就插入 Radix Cache，其他并发请求可能会命中这个正在计算中的前缀。只有等到计算完成（或者至少在 `process_batch_result` 里），我们才能确信这部分 KV 已经写入显存，可以安全地被其他请求共享。
+
+## Overlap Scheduler：将调度开销隐藏在算子之后
+
+Normal Scheduler 的工作流中，CPU 调度和 GPU 计算是串行的。然而，这种阻塞式的模式下，CPU 调度效率严重影响着整个系统性能的上限，倘若单步 Decode 仅需几毫秒，则 CPU 准备工作产生的微小延迟都会被放大为显著的 bubble。通过 profiling，我们进一步发现，CPU 侧运行核心调度算法（如优先级排序）的开销其实很小，真正的开销大头在于 Python 侧繁重的输入输出处理：
+
+1. Pre Schedule: 构建复杂的输入张量、准备采样元数据（Sampling Info）、分发请求元数据。
+2. Post Schedule: 执行输出的去标记化（Detokenization）、检查结束条件（EOS/Length）。
+
+对于这种情况，我们有两个思路，一种是降低 CPU 调度的频率（减少调度次数），另一种是异步掩盖（将 CPU 的调度开销掩盖在 GPU 计算之内），这分别对应着两种技术流派，Multi-step Scheduling 与 Overlap Scheduling。为了解释清楚这两种技术流派，我们来分析一个细节，采样得到的 token 实际上是在哪一步进行的，换句话说，为什么 Sample 阶段其实是在 GPU 进行的？
+
+
+乍一想，采样似乎不是一个简单的矩阵乘法运算，GPU 上的计算效率似乎不高。但是 logits 传输到 CPU 上再进行采样，会产生庞大的传输开销。假设 Batch Size 是 256，模型的词表大小（Vocabulary Size）是 128,000（Llama-3 的标准）。每一轮生成的 Logits 矩阵大小是 `[256, 128000]`，如果是 bf16（2 字节），那么一轮的数据量就是 $256 \times 128,000 \times 2 \approx 65 \text{ MB}$。如果在 CPU 上采样，必须在每一个 decode step 都通过 PCIe 把这 65 MB 的数据从 GPU 搬运到 CPU。虽然 PCIe 4.0 很快，但每秒搬运几百次 65 MB 产生的时间开销（Latency），可能比模型推理本身还要长。反过来，选择在 GPU 上采样，只需要运行一个极小的 Kernel（比如 Argmax 或者 Top-P 采样），从 128,000 个数里挑出 **1 个** Token ID。传回给 CPU 的数据仅仅是 batch size 个整数（Token IDs），大小不到 1 KB。考虑到这层后，在传统的推理框架中，采样实质上发生在 GPU 上。但 CPU 依然要等待采样结果回传（Synchronize），拿到了 Token ID 才能进行下一轮调度，这就是 Normal Scheduler 的做法。
+
+有了采样事件的认知后，我们总结下 Scheduling 的四种事件和对应的计算位置：
+
+| 事件 | 计算位置 |
+| :--- | :--- |
+| Pre Schedule | CPU Heavy |
+| Compute Batch | GPU Heavy |
+| Sample | GPU Heavy |
+| Post Schedule | CPU Heavy |
+
+### Multi-step Scheduling vs. Overlap Scheduling
+
+**Multi-step Scheduling**
+
+在 normal scheduler 中，每一轮生成 Token 都要负担一轮 Python 的调度成本，能否降低 CPU 调度的频率，比如生成多轮 token，再进行一次 CPU 调度？这就是 multi-step scheduling 的核心思想：Amortize（摊薄）。CPU 不再每生成一个 Token 就介入一次，而是一次性给 GPU 下达一个多轮指令，譬如当前 Batch 请连续跑 5 个步（Steps），再返回给 CPU，进行一次调度。具体而言，在 CPU 不介入的情况下，GPU 内部会运行一个固化的循环 Kernel，每一轮推理（Forward）结束后，GPU 直接在显存（VRAM）中进行采样，并将得到的 Token ID 直接填入下一轮的输入 Buffer。在这多步运行期间，生成的 Token 完全不回传给 Python。
+
+这种 amortize 的策略虽然摊薄了 CPU 开销，却牺牲了推理系统的灵活性。首先，EOS 响应滞后；如果某个请求在第 2 步就输出了结束符（EOS），由于 CPU 正在“休眠”，GPU 会毫无察觉地继续跑完剩下的 3 步，造成显存和算力的空转。其次，无法满足调度调整，高优先级的请求（Preemption）必须等待整个 Multi-step 周期结束才能被加入队列。
+
+**Overlap Scheduling**
+
+与之相对的另一种调度优化方法是 Overlap Scheduling，它并不试图减少调度的频率，依然坚持单步调度，而是通过一种极其巧妙的重叠机制，把 CPU 的开销彻底隐藏在 GPU 的计算之内。但是，自回归推理中，第 $N+1$ 步必须依赖第 $N$ 步的输出 Token。如果 CPU 不等 GPU 采样完就去调度下一轮，它根本不知道输入 Token 是多少。
+
+SGLang 引入了 `FutureMap` 机制，实现了一种预填充策略：
+
+1. CPU 侧：符号化链接（Symbolic Linking）：当 CPU 准备 Batch N 的推理指令时，它会预先在 GPU 的 `FutureMap` 中预留（Reserve）一组物理槽位。尽管 Batch N 还没结束，CPU 已经知道 Batch N 产生的 Token，肯定会被分配到 FutureMap 的 X 号槽位。在 CPU 准备 Batch N+1 的输入张量时，通过符号引用，将 X 号槽位的地址直接填入 N+1 的输入位置。CPU 在数值尚未产生时，就已经在逻辑上完成了 Batch N (Output) -> Batch N+1 (Input) 的拓扑链接。
+
+2. GPU 侧：延迟解析（Lazy Resolution）：Batch N+1 的指令被发射到 `forward_stream`。在它启动真正的推理算子前，会先跑一个极小的 Resolve Kernel。由于 `forward_stream` 是顺序执行（FIFO）的，Batch N 的采样算子（Sample）必然已经先于 N+1 完成了填充动作——即把真实的 Token ID 写入了 `FutureMap` 的第 X 号槽位。Resolve Kernel 此时只需根据索引，从显存的 `FutureMap[X]` 位置读出真实值，原地替换输入张量。
+
+3. 通过这种预先链接的机制，CPU 可以在完全不触碰真实数据、不进行跨设备同步的前提下，不断向 GPU 发射后续的计算指令，从而实现 Overlap Scheduling。
+
+分析完了原理，我们能够见到，Overlap Scheduling 的调度策略仍旧是灵活的，支持细粒度的资源控制，支持完善的 EOS 响应，支持抢占。当然，代价是实现复杂，需要使用 CUDA Stream 和 Future 映射管理。
+
+## Overlap 原理：Inference 四阶段拆解
+
+在理解 Overlap 之前，我们先将推理过程拆解为硬件特性不同的四个阶段：
+
+1. **Pre schedule** (CPU Heavy): 收集请求 (`recv_request`) -> 调度匹配 (`get_batch_to_run`, Radix 匹配) -> 资源分配 (`prepare_for_extend/decode`)。
+2. **Compute batch** (GPU Heavy): 发送 batch 到 GPU 执行一步推理 (`run_batch`)。
+3. **Sample** (GPU Heavy): 根据 Logits 和 Grammar 的 `vocab_mask` 进行采样 (`ModelRunner::sample`)。
+4. **Post schedule** (CPU Heavy): 检查结束条件 (`process_batch_result`) -> 完成请求退场并 Detokenize。
+
+**流水线核心思想**：Compute batch 和 Sample 是 GPU 重负载阶段，而 Schedule 是 CPU 重负载阶段。当多个 batch 形成流水线时，我们可以用 **GPU 的 Compute N+1 和 Sample N+1，去重叠上一个批次的 Post Schedule N 和当前批次的 Pre Schedule N+1**。
+
+> **注**：Prefill 阶段的 Grammar Mask 通常基于 Prompt，不依赖上一次 Decode 的输出，因此可以直接 Sample，不涉及复杂的依赖重叠。
+
+## 基础设施：CUDA Stream 与 FutureMap
+
+实现 Overlap 的关键在于使用 CUDA Stream 异步队列 + `FutureMap` 占位符机制。
+
+### 1. 多 Stream 协同
+- **forward_stream**: 专门用于 GPU 前向计算，与默认流并行。
+- **copy_stream**: 负责处理 GPU -> CPU 的异步数据回传。
+- **future_map**: 存放于 GPU 上，管理异步计算结果。
+
+### 2. FutureMap：显存中的异步桥梁
+由于 CPU 在准备 Batch N+1 时并不知道 Batch N 的输出，我们使用**负索引作为 Future 标识符**。
+
+**设计参数 (Engineering Wisdom)**:
+- `future_limit = max_running_requests * 3`：3 倍因子用于降低环形缓冲区的碰撞概率。
+- `future_buffer_len = max_running_requests * 5`：5 倍长度确保缓冲区足够大，防止回绕写入冲突。
+
+**工作流程**:
+1. **分配 (Alloc - CPU)**: 调用 `alloc_future_indices` 得到负数索引（如 `[-1, -2]`），作为下一轮的 `input_ids`。
+2. **存储 (Store - GPU Batch N)**: GPU 完成 Sample 后，直接在显存中将真实 Token 写入 `FutureMap` 对应位置。
+3. **解析 (Resolve - GPU Batch N+1)**: 在 Batch N+1 开始计算前，GPU 执行 `resolve_future` 将 `input_ids` 中的负数替换为真实 Token。
+
+## Overlap 事件循环
+
+在 `scheduler.py` 中，`event_loop_overlap` 通过精心安排的指令发射顺序，保证了 CPU 和 GPU 的最大并行：
+
+```python
+def event_loop_overlap(self):
+    self.result_queue = deque()  # 存储 (batch, result)
+    while True:
+        # 1. Pre Schedule (Batch N+1)
+        recv_reqs = self.recv_requests()
+        self.process_input_requests(recv_reqs)
+        batch = self.get_next_batch_to_run() 
+
+        if batch:
+            # 2. Launch Compute Batch (Batch N+1) -> 非阻塞提交
+            # 包含：resolve_future + forward_batch_generation
+            batch_result = self.run_batch(batch) 
+            self.result_queue.append((batch.copy(), batch_result))
+
+        # 3. Post Schedule (Batch N)
+        # 真正实现 CPU (Post-Schedule N) 与 GPU (Compute N+1) 的并行
+        if self.last_batch:
+            tmp_batch, tmp_result = self.result_queue.popleft()
+            # 同步等待 CPU 数据就绪，但不影响 GPU 正在跑的 Compute N+1
+            self.process_batch_result(tmp_batch, tmp_result)
+
+        # 4. Launch Sample (Batch N+1)
+        # 在 Post-Schedule N 之后执行，确保了 N+1 依赖的 vocab mask 已更新
+        self.launch_batch_sample_if_needed(batch_result)
+        
+        self.last_batch = batch
+```
+
+## 与 Normal 模式的关键差异与依赖处理
+
+### 1. 显存屏障与内存安全
+为了避免 Overlap 过程中 CPU 过早释放 Tensor 导致 GPU 访问野指针，SGLang 引入了 `record_batch_in_overlap` 机制。通过 `self.batch_record_buf = [None] * 2` 在两个 Batch 之间交替存储引用，强制延长 Tensor 的生命周期。
+
+### 2. 依赖解决方案
+- **Sample 阶段的 vocab mask 依赖**：通过 CPU 调度顺序保证：只有在 `Post Schedule N` 完成并更新 Grammar 状态后，才发射 `Sample N+1` 任务。
+- **Compute N+1 的输入依赖**：通过 `FutureMap` 桥接。CUDA Stream 的 FIFO 顺序保证了 `Sample N` 的 `Store` 动作必然发生在 `Compute N+1` 的 `Resolve` 之前。
+
+### 3. 架构进化：从 CPU Launch 到 CUDA Stream
+SGLang 0.4+ 的 Overlap 相比早期版本（Lazy Sampling）有了质的飞跃：
+
+| 特性 | 早期版本 (CPU Launch) | 当前版本 (CUDA Stream) |
+| :--- | :--- | :--- |
+| **Vocab Mask 管理** | CPU 计算并同步传输到 GPU | **GPU 直接计算和分配**，无传输延迟 |
+| **数据同步** | 使用 CUDA Event 进行同步 | **利用 Stream 顺序隐式同步**，性能更高 |
+| **数据搬运** | `token_ids_buf` 在 CPU/GPU 间传输 | **GPU 原地修改**，CPU 仅管理负索引分配 |
+| **优缺点** | 显存占用动态，但同步开销大 | **Zero-Overhead**，但需固定占用一小块显存 |
+
+通过将对 Sample 和 Future 读写的控制权完全交给 GPU Stream，SGLang 成功消除了调度带来的 GPU 气泡，实现了极致的吞吐。
